@@ -3,59 +3,119 @@ main class for building a DL pipeline.
 
 """
 
-from accelerate import Accelerator
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from data import GenericDataset
 from model.linear import DNN
 from runner import Runner
-import click
+import wandb
+import argparse
+import matplotlib.pyplot as plt
+import random
+import torch
+
+from model.linear import activations
 
 
-@click.group()
-def cli():
-    pass
+def train(args):
 
+    if not args.debug:
+        wandb.init(
+            project=args.exp,
+            name=args.run,
+            config=args,
+            entity=args.entity
+        )
 
-@cli.command()
-def train():
+    train_set = GenericDataset('train')
+    train_loader = DataLoader(train_set, batch_size=args.bs, shuffle=True)
 
-    # Initialize hyperparameters
-    hidden_size = 128
-    epochs = 1000
-    batch_size = 10
-    lr = 0.001
+    dev_set = GenericDataset('dev')
+    dev_loader = DataLoader(dev_set, batch_size=args.bs, shuffle=True)
 
-    # Accelerator is in charge of auto casting tensors to the appropriate GPU device
-    accelerator = Accelerator()
-
-    # Initialize the training set and a dataloader to iterate over the dataset
-    train_set = GenericDataset()
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
-
-    # Get the size of the input and output vectors from the training set
     in_features, out_features = train_set.get_in_out_size()
 
-    # Create the model and optimizer and cast model to the appropriate GPU
-    model = DNN(in_features, hidden_size, out_features).to(accelerator.device)
-    optimizer = AdamW(model.parameters(), lr=lr)
+    model = DNN(in_features, args.hsize, out_features, args.nlayers, activation=args.act)
+    optimizer = AdamW(model.parameters(), lr=args.lr)
 
-    # Create a runner that will handle
-    runner = Runner(
+    if args.log_weights and not args.debug:
+        wandb.watch(model, log='all')
+
+    train_runner = Runner(
+        split='train',
         train_set=train_set,
         train_loader=train_loader,
-        accelerator=accelerator,
         model=model,
         optimizer=optimizer,
     )
 
-    # Train the model
-    for _ in range(epochs):
+    dev_runner = Runner(
+        split='dev',
+        train_set=dev_set,
+        train_loader=dev_loader,
+        model=model,
+        optimizer=optimizer,
+    )
 
-        # Run one loop of training and record the average loss
-        train_stats = runner.next()
-        print(f"{train_stats}")
+    for _ in range(args.epochs):
+        train_stats = train_runner.next()
+        dev_stats = dev_runner.next()
+        print(f"train_stats: {train_stats}")
+        print(f"dev_stats: {dev_stats}\n")
+        idx = random.randint(0, len(dev_set))
+        random_xy = dev_set[idx]
+        pred = model(torch.tensor(random_xy[0]))
+        two_array = dev_set[idx][0].reshape(28, 28)
 
+        fig, ax = plt.subplots(figsize=(5, 5))
+        ax.imshow(two_array, cmap='gray', interpolation='nearest')
+        ax.axis('off')
+        plt.tight_layout()
+
+        image_path = args.save_dir + "/temp_image.png"
+        plt.savefig(temp_file, bbox_inches='tight', pad_inches=0)
+        plt.close(fig)
+
+        if not args.debug:
+            wandb.log(
+                {
+                    'toss': train_stats,
+                    'voss': dev_stats,
+                    'Image': wandb.Image(
+                        temp_file,
+                        caption=f"Predicted: {pred.item()}, True Label: {random_xy[1][0]}"),
+                }
+            )
+
+    torch.save(model.state_dict(), args.save_dir + '/model_state_dict.pth')
+
+    if not args.debug:
+        wandb.save(args.save_dir + '/model_state_dict.pth')
+        wandb.finish()
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bs", type=int, default=32)
+    parser.add_argument("--hsize", type=int, default=128)
+    parser.add_argument("--nlayers", type=int, default=3)
+    parser.add_argument("--act", type=str, default="ReLU", choices=list(activations.keys()))
+    parser.add_argument("--lr", type=float, default=0.0001)
+    parser.add_argument("--epochs", type=int, default=10)
+
+    # WandB Flags (advanced) 😎
+    parser.add_argument('--entity', default='diegollanes', help='wandb entity')
+    parser.add_argument('--save_dir', default='save', help='where to save stuff')
+    parser.add_argument('--log_weights', action='store_true', help='help me')
+    parser.add_argument("--exp", type=str, default="mnist",
+                        help="Will group all run under this experiment name.")
+    parser.add_argument("--run", type=str, default=None,
+                        help="Some name to tell what the experiment run was about.")
+    parser.add_argument('--debug', action='store_true', help='help me')
+
+    args = parser.parse_args()
+    return args
 
 if __name__ == "__main__":
-    cli()
+    args = parse_args()
+    train(args)

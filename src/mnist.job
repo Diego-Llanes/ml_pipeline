@@ -1,0 +1,11 @@
++CSCI_GrpDesktop = True
+executable=
+request_gpus=1
+request_cpus=8
+request_memory=8GB
+require_gpus=GlobalMemoryMB>5000
+output=logs/out.$(clusterid).$(procid).txt
+error=logs/err.$(clusterid).$(procid).txt
+log=logs/condor.log
+max_materialize=10
+queue 8192

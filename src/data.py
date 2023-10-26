@@ -1,87 +1,87 @@
 from torch.utils.data import Dataset
 import numpy as np
-import einops
-import csv
-import torch
-import click
-
-
-SAMPLES = 500
-IN_DIM = 30
-OUT_DIM = 20
+from os.path import join
+import struct
+from array import array
 
 
 class GenericDataset(Dataset):
-    def __init__(self):
-        rng = np.random.default_rng()
-        self.x = rng.normal(size=(SAMPLES, IN_DIM)).astype(np.float32)
-        self.y = 500 * rng.normal(size=(SAMPLES, OUT_DIM)).astype(np.float32)
+
+    def __init__(self, split):
+        self.split = split
+        input_path = 'archive'
+        training_images_filepath = join(input_path, 'train-images-idx3-ubyte/train-images-idx3-ubyte')
+        training_labels_filepath = join(input_path, 'train-labels-idx1-ubyte/train-labels-idx1-ubyte')
+        test_images_filepath = join(input_path, 't10k-images-idx3-ubyte/t10k-images-idx3-ubyte')
+        test_labels_filepath = join(input_path, 't10k-labels-idx1-ubyte/t10k-labels-idx1-ubyte')
+
+        loader = MnistDataloader(
+            training_images_filepath,
+            training_labels_filepath,
+            test_images_filepath,
+            test_labels_filepath
+        )
+        self.train, self.dev = loader.load_data()
+        if self.split == 'train':
+            self.data = self.train
+            del self.dev
+        if self.split == 'dev':
+            self.data = self.dev
+            del self.train
 
     def __getitem__(self, idx):
-        return (self.x[idx], self.y[idx])
+        return np.asarray(self.data[0][idx]).ravel().astype('float32'), np.asarray([self.data[1][idx]]).astype('float32')
 
     def __len__(self):
-        return len(self.x)
+        return len(self.data[0])
 
     def get_in_out_size(self):
-        return self.x.shape[1], self.y.shape[1]
+        return np.asarray(self.data[0][0]).ravel().shape[-1], 1
 
 
-class FashionDataset(Dataset):
-    def __init__(self, path: str):
-        self.path = path
-        self.x, self.y = self.load()
+class MnistDataloader(object):
+    def __init__(self, training_images_filepath,training_labels_filepath,
+                 test_images_filepath, test_labels_filepath):
+        self.training_images_filepath = training_images_filepath
+        self.training_labels_filepath = training_labels_filepath
+        self.test_images_filepath = test_images_filepath
+        self.test_labels_filepath = test_labels_filepath
 
-    def __getitem__(self, idx):
-        return (self.x[idx], self.y[idx])
-
-    def __len__(self):
-        return len(self.x)
-
-    def load(self):
-        # opening the CSV file
-        with open(self.path, mode="r") as file:
-            images = list()
-            classes = list()
-            # reading the CSV file
-            csvFile = csv.reader(file)
-            # displaying the contents of the CSV file
-            header = next(csvFile)
-            limit = 1000
-            for line in csvFile:
-                if limit < 1:
-                    break
-                classes.append(int(line[:1][0]))
-                images.append([int(x) for x in line[1:]])
-                limit -= 1
-            classes = torch.tensor(classes, dtype=torch.long)
-            images = torch.tensor(images, dtype=torch.float32)
-            images = einops.rearrange(images, "n (w h) -> n w h", w=28, h=28)
-            images = einops.repeat(
-                images, "n w h -> n c (w r_w) (h r_h)", c=1, r_w=8, r_h=8
-            )
-            return (images, classes)
-
-
-@click.group()
-def cli():
-    ...
+    def read_images_labels(self, images_filepath, labels_filepath):
+        labels = []
+        with open(labels_filepath, 'rb') as file:
+            magic, size = struct.unpack(">II", file.read(8))
+            if magic != 2049:
+                raise ValueError('Magic number mismatch, expected 2049, got {}'.format(magic))
+            labels = array("B", file.read())        
+        
+        with open(images_filepath, 'rb') as file:
+            magic, size, rows, cols = struct.unpack(">IIII", file.read(16))
+            if magic != 2051:
+                raise ValueError('Magic number mismatch, expected 2051, got {}'.format(magic))
+            image_data = array("B", file.read())        
+        images = []
+        for i in range(size):
+            images.append([0] * rows * cols)
+        for i in range(size):
+            img = np.array(image_data[i * rows * cols:(i + 1) * rows * cols])
+            img = img.reshape(28, 28)
+            images[i][:] = img            
+        
+        return images, labels
+            
+    def load_data(self):
+        x_train, y_train = self.read_images_labels(self.training_images_filepath, self.training_labels_filepath)
+        x_test, y_test = self.read_images_labels(self.test_images_filepath, self.test_labels_filepath)
+        return (x_train, y_train),(x_test, y_test)     
 
 
-@cli.command()
-def main():
-    path = "fashion-mnist_train.csv"
-    dataset = FashionDataset(path=path)
-    print(f"len: {len(dataset)}")
-    print(f"first shape: {dataset[0][0].shape}")
-    mean = einops.reduce(dataset[:10], "n w h -> w h", "mean")
-    print(f"mean shape: {mean.shape}")
 
-
-@cli.command()
 def generic():
-    dataset = GenericDataset()
+    ds = GenericDataset('dev')
+    import ipdb; ipdb.set_trace()
+    ds[0]
 
 
 if __name__ == "__main__":
-    cli()
+    generic()
