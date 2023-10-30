@@ -1,4 +1,28 @@
 from torch import nn
+from model import activations
+
+
+class ClassificationCNN(nn.Module):
+
+    def __init__(self, out_size, pool_size=28, activation='ReLU'):
+        super(ClassificationCNN, self).__init__()
+
+        self.act = activations[activation]
+        self.pool_size = pool_size
+        self.conv = nn.Conv2d(1, 1, kernel_size=3, padding=1)
+        self.pool = nn.AdaptiveMaxPool2d(pool_size)
+        self.out_linear = nn.Linear(pool_size ** 2, out_size)
+
+        # Softmax across the last dimension (The inferenece not the batch dim)
+        self.probs = nn.Softmax(dim=-1)
+
+    def forward(self, x):
+        x = x.reshape(-1, 1, 28, 28)
+        x = self.conv(x)
+        x = self.pool(x)
+        x = self.act(x)
+        x = x.reshape(-1, self.pool_size ** 2)
+        return self.probs(self.out_linear(x))
 
 
 # the VGG11 architecture

@@ -1,19 +1,12 @@
 import torch.nn as nn
-
-activations = {
-    'ReLU': nn.ReLU(),
-    'LeakyReLU': nn.LeakyReLU(),
-    'Sigmoid': nn.Sigmoid(),
-    'Tanh': nn.Tanh(),
-    'ELU': nn.ELU(),
-    'PReLU': nn.PReLU(),
-    'SELU': nn.SELU()
-}
+import torch
+from model import activations
 
 
-class DNN(nn.Module):
+class ClassificationDNN(nn.Module):
+
     def __init__(self, in_size, hsize, out_size, nlayers, activation='ReLU'):
-        super(DNN, self).__init__()
+        super(ClassificationDNN, self).__init__()
 
         self.act = activations[activation]
         self.in_linear = nn.Linear(in_size, hsize)
@@ -21,9 +14,20 @@ class DNN(nn.Module):
         for _ in range(nlayers):
             self.hidden_layers.append(nn.Linear(hsize, hsize))
         self.out_linear = nn.Linear(hsize, out_size)
+        # Softmax across the last dimension (The inferenece not the batch dim)
+        self.probs = nn.Softmax(dim=-1)
 
     def forward(self, x):
         x = self.act(self.in_linear(x))
         for hidden_layer in self.hidden_layers:
             x = self.act(hidden_layer(x))
-        return self.out_linear(x)
+        return self.probs(self.out_linear(x))
+
+
+if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+    line = torch.linspace(-5, 10, 200)
+    fig, ax = plt.subplots(1, 1)
+    elu6 = ELU6()
+    plt.plot(elu6(line))
+    plt.show()

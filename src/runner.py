@@ -15,7 +15,7 @@ class Runner:
         self.optimizer, self.model, self.train_loader = optimizer, model, train_loader
 
         # Since data is for targets, use Mean Squared Error Loss
-        self.criterion = nn.MSELoss()
+        self.criterion = nn.BCELoss()
 
     def next(self):
         # Turn the model to training mode (affects batchnorm and dropout)

@@ -6,7 +6,8 @@ main class for building a DL pipeline.
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from data import GenericDataset
-from model.linear import DNN
+from model.linear import ClassificationDNN
+from model.cnn import ClassificationCNN
 from runner import Runner
 import wandb
 import argparse
@@ -15,6 +16,9 @@ import random
 import torch
 
 from model.linear import activations
+
+# Set the global seed
+torch.manual_seed(0)
 
 
 def train(args):
@@ -35,7 +39,8 @@ def train(args):
 
     in_features, out_features = train_set.get_in_out_size()
 
-    model = DNN(in_features, args.hsize, out_features, args.nlayers, activation=args.act)
+    model = ClassificationCNN(out_features, activation=args.act)
+    # model = ClassificationDNN(in_features, args.hsize, out_features, args.nlayers, activation=args.act)
     optimizer = AdamW(model.parameters(), lr=args.lr)
 
     if args.log_weights and not args.debug:
@@ -65,6 +70,7 @@ def train(args):
         idx = random.randint(0, len(dev_set))
         random_xy = dev_set[idx]
         pred = model(torch.tensor(random_xy[0]))
+        true_label = random_xy[1]
         two_array = dev_set[idx][0].reshape(28, 28)
 
         fig, ax = plt.subplots(figsize=(5, 5))
@@ -73,8 +79,12 @@ def train(args):
         plt.tight_layout()
 
         image_path = args.save_dir + "/temp_image.png"
-        plt.savefig(temp_file, bbox_inches='tight', pad_inches=0)
+        plt.savefig(image_path, bbox_inches='tight', pad_inches=0)
         plt.close(fig)
+
+        predicted_class = pred.argmax().item()
+        confidence = 100 * pred.max().item()
+        true_label = true_label.argmax().item()
 
         if not args.debug:
             wandb.log(
@@ -82,8 +92,8 @@ def train(args):
                     'toss': train_stats,
                     'voss': dev_stats,
                     'Image': wandb.Image(
-                        temp_file,
-                        caption=f"Predicted: {pred.item()}, True Label: {random_xy[1][0]}"),
+                        image_path,
+                        caption=f"Prediction: {predicted_class}, Confidence: {confidence:.2f}%, True Label: {true_label}"),
                 }
             )
 
@@ -115,6 +125,7 @@ def parse_args():
 
     args = parser.parse_args()
     return args
+
 
 if __name__ == "__main__":
     args = parse_args()
